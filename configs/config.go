@@ -24,6 +24,9 @@ type Config struct {
 	
 	// Detection settings
 	Manufacturers []string
+
+	//new cve checking
+	EnableCVECheck bool
 }
 
 // NewDefaultConfig returns a config with sensible defaults
@@ -32,6 +35,9 @@ func NewDefaultConfig() *Config {
 		Timeout:           3 * time.Second,
 		MaxConcurrent:     50,
 		CheckDefaultCreds: true,
+
+		//cve checking
+		EnableCVECheck: true, 
 		
 		// NEW: Port scanning defaults
 		EnableFullPortScan:    true,

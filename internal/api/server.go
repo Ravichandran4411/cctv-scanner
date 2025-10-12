@@ -11,6 +11,7 @@ import (
 	"github.com/gatiella/cctv-scanner/internal/websocket"
 	"github.com/gatiella/cctv-scanner/pkg/models"
 	"github.com/google/uuid"
+	"github.com/gatiella/cctv-scanner/internal/bruteforce"
 )
 
 type Server struct {
@@ -18,6 +19,7 @@ type Server struct {
 	Router    *http.ServeMux
 	WSHub     *websocket.Hub
 	ScanStore *ScanStore
+	BFEngine  *bruteforce.BruteForceEngine // NEW
 }
 
 type ScanStore struct {
@@ -44,9 +46,9 @@ func NewServer(config *configs.Config) *Server {
 		ScanStore: &ScanStore{
 			scans: make(map[string]*ScanSession),
 		},
+		BFEngine: bruteforce.NewBruteForceEngine(), // NEW
 	}
 }
-
 func (s *Server) SetupRoutes() {
 	// Start WebSocket hub
 	go s.WSHub.Run()
@@ -62,6 +64,11 @@ func (s *Server) SetupRoutes() {
 	s.Router.HandleFunc("/api/scan/results/", s.corsMiddleware(s.handleScanResults))
 	s.Router.HandleFunc("/api/scan/history", s.corsMiddleware(s.handleScanHistory))
 	s.Router.HandleFunc("/api/ws", s.handleWebSocket)
+	// Bruteforce routes
+	s.Router.HandleFunc("/api/bruteforce/start", s.corsMiddleware(s.handleBruteForceStart))
+	s.Router.HandleFunc("/api/bruteforce/status/", s.corsMiddleware(s.handleBruteForceStatus))
+	s.Router.HandleFunc("/api/bruteforce/stop/", s.corsMiddleware(s.handleBruteForceStop))
+	s.Router.HandleFunc("/api/bruteforce/results/", s.corsMiddleware(s.handleBruteForceResults))
 }
 
 func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -280,4 +287,83 @@ func (s *Server) handleScanHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	websocket.ServeWs(s.WSHub, w, r)
+}
+func (s *Server) handleBruteForceStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var req bruteforce.AttackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	attackID, err := s.BFEngine.StartAttack(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"attack_id": attackID,
+		"message":   "Brute force attack started",
+	})
+}
+
+func (s *Server) handleBruteForceStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	attackID := r.URL.Path[len("/api/bruteforce/status/"):]
+	
+	session, err := s.BFEngine.GetStatus(attackID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	statusInfo := session.GetStatusInfo()
+	json.NewEncoder(w).Encode(statusInfo)
+}
+func (s *Server) handleBruteForceStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	
+	attackID := r.URL.Path[len("/api/bruteforce/stop/"):]
+	
+	if err := s.BFEngine.StopAttack(attackID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Attack stopped successfully",
+	})
+}
+
+func (s *Server) handleBruteForceResults(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	attackID := r.URL.Path[len("/api/bruteforce/results/"):]
+	
+	session, err := s.BFEngine.GetStatus(attackID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	credentials, count := session.GetCredentials()
+	
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"credentials": credentials,
+		"count":       count,
+	})
 }

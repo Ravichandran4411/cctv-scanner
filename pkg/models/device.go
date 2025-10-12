@@ -13,50 +13,72 @@ type Device struct {
 	Issues       []SecurityIssue
 	ScanTime     time.Time
 	ResponseTime int // in milliseconds
+
+	// Enhanced port scanning fields
+	OpenPorts []PortInfo      `json:"open_ports"`
+	Services  []ServiceInfo   `json:"services"`
+	OS        string          `json:"os,omitempty"`
+	HostName  string          `json:"hostname,omitempty"`
 	
-	// NEW: Enhanced port scanning fields
-	OpenPorts    []PortInfo      `json:"open_ports"`
-	Services     []ServiceInfo   `json:"services"`
-	OS           string          `json:"os,omitempty"`
-	HostName     string          `json:"hostname,omitempty"`
+	// NEW: CVE Database fields
+	CVEs      []CVEInfo       `json:"cves"`
+	CVECount  int             `json:"cve_count"`
 }
 
-// NEW: PortInfo represents an open port
+// PortInfo represents an open port
 type PortInfo struct {
 	Port         int    `json:"port"`
-	Protocol     string `json:"protocol"` // tcp, udp
-	State        string `json:"state"`    // open, closed, filtered
-	Service      string `json:"service"`  // http, ssh, ftp, etc.
+	Protocol     string `json:"protocol"`
+	State        string `json:"state"`
+	Service      string `json:"service"`
 	ResponseTime int    `json:"response_time_ms"`
 }
 
-// NEW: ServiceInfo represents a detected service
+// ServiceInfo represents a detected service
 type ServiceInfo struct {
 	Port        int               `json:"port"`
-	Name        string            `json:"name"`        // HTTP, SSH, FTP, RTSP
-	Version     string            `json:"version"`     // Apache/2.4.41
-	Banner      string            `json:"banner"`      // Server response
-	Fingerprint string            `json:"fingerprint"` // Service signature
-	ExtraInfo   map[string]string `json:"extra_info"`  // Additional details
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Banner      string            `json:"banner"`
+	Fingerprint string            `json:"fingerprint"`
+	ExtraInfo   map[string]string `json:"extra_info"`
 }
 
 // SecurityIssue represents a security vulnerability or concern
 type SecurityIssue struct {
-	Severity    string // Critical, High, Medium, Low
-	Type        string // e.g., "Default Credentials", "Unencrypted"
+	Severity    string
+	Type        string
 	Description string
 	Remediation string
+}
+
+// NEW: CVEInfo represents a CVE vulnerability
+type CVEInfo struct {
+	ID               string    `json:"id"`                 // CVE-2017-7921
+	Description      string    `json:"description"`        // Vulnerability description
+	Severity         string    `json:"severity"`           // Critical, High, Medium, Low
+	CVSSScore        float64   `json:"cvss_score"`         // 9.8
+	CVSSVector       string    `json:"cvss_vector"`        // CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+	PublishedDate    time.Time `json:"published_date"`     // When CVE was published
+	LastModified     time.Time `json:"last_modified"`      // Last update
+	AffectedVersions []string  `json:"affected_versions"`  // Firmware versions affected
+	ExploitAvailable bool      `json:"exploit_available"`  // Is exploit publicly available
+	ExploitMaturity  string    `json:"exploit_maturity"`   // Proof of Concept, Functional, High
+	References       []string  `json:"references"`         // Links to CVE details
+	Remediation      string    `json:"remediation"`        // How to fix
+	PatchAvailable   bool      `json:"patch_available"`    // Is patch available
 }
 
 // NewDevice creates a new Device instance
 func NewDevice(ip string, port int) *Device {
 	return &Device{
-		IP:           ip,
-		Port:         port,
-		Issues:       make([]SecurityIssue, 0),
-		OpenPorts:    make([]PortInfo, 0),
-		Services:     make([]ServiceInfo, 0),
-		ScanTime:     time.Now(),
+		IP:        ip,
+		Port:      port,
+		Issues:    make([]SecurityIssue, 0),
+		OpenPorts: make([]PortInfo, 0),
+		Services:  make([]ServiceInfo, 0),
+		CVEs:      make([]CVEInfo, 0),
+		ScanTime:  time.Now(),
 	}
 }
 
@@ -72,14 +94,21 @@ func (d *Device) AddIssue(severity, issueType, description, remediation string) 
 	d.Vulnerable = true
 }
 
-// NEW: AddPort adds an open port to the device
+// AddPort adds an open port to the device
 func (d *Device) AddPort(portInfo PortInfo) {
 	d.OpenPorts = append(d.OpenPorts, portInfo)
 }
 
-// NEW: AddService adds a service to the device
+// AddService adds a service to the device
 func (d *Device) AddService(serviceInfo ServiceInfo) {
 	d.Services = append(d.Services, serviceInfo)
+}
+
+// NEW: AddCVE adds a CVE to the device
+func (d *Device) AddCVE(cve CVEInfo) {
+	d.CVEs = append(d.CVEs, cve)
+	d.CVECount = len(d.CVEs)
+	d.Vulnerable = true
 }
 
 // GetSeverityScore returns a numeric score based on issues
@@ -97,15 +126,21 @@ func (d *Device) GetSeverityScore() int {
 			score += 2
 		}
 	}
+	
+	// NEW: Add CVE scores
+	for _, cve := range d.CVEs {
+		score += int(cve.CVSSScore)
+	}
+	
 	return score
 }
 
-// NEW: GetOpenPortCount returns the number of open ports
+// GetOpenPortCount returns the number of open ports
 func (d *Device) GetOpenPortCount() int {
 	return len(d.OpenPorts)
 }
 
-// NEW: HasService checks if a specific service is running
+// HasService checks if a specific service is running
 func (d *Device) HasService(serviceName string) bool {
 	for _, service := range d.Services {
 		if service.Name == serviceName {
@@ -113,4 +148,36 @@ func (d *Device) HasService(serviceName string) bool {
 		}
 	}
 	return false
+}
+
+// NEW: GetCriticalCVECount returns count of critical CVEs
+func (d *Device) GetCriticalCVECount() int {
+	count := 0
+	for _, cve := range d.CVEs {
+		if cve.Severity == "Critical" || cve.CVSSScore >= 9.0 {
+			count++
+		}
+	}
+	return count
+}
+
+// NEW: HasExploitAvailable checks if any CVE has public exploit
+func (d *Device) HasExploitAvailable() bool {
+	for _, cve := range d.CVEs {
+		if cve.ExploitAvailable {
+			return true
+		}
+	}
+	return false
+}
+
+// Credential represents discovered credentials
+type Credential struct {
+	IP                    string    `json:"ip"`
+	Port                  int       `json:"port"`
+	Username              string    `json:"username"`
+	Password              string    `json:"password"`
+	Protocol              string    `json:"protocol"`
+	DiscoveredAt          time.Time `json:"discovered_at"`
+	AttemptsBeforeSuccess int       `json:"attempts_before_success"`
 }
