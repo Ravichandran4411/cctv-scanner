@@ -13,15 +13,19 @@ import (
 
 // Scanner handles network scanning operations
 type Scanner struct {
-	config   *configs.Config
-	detector *detector.Detector
+	config          *configs.Config
+	detector        *detector.Detector
+	portScanner     *PortScanner     // NEW
+	serviceDetector *ServiceDetector // NEW
 }
 
 // NewScanner creates a new Scanner instance
 func NewScanner(config *configs.Config) *Scanner {
 	return &Scanner{
-		config:   config,
-		detector: detector.NewDetector(config),
+		config:          config,
+		detector:        detector.NewDetector(config),
+		portScanner:     NewPortScanner(config),     // NEW
+		serviceDetector: NewServiceDetector(config), // NEW
 	}
 }
 
@@ -37,7 +41,6 @@ func (s *Scanner) ScanNetwork(cidr string) []*models.Device {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// Semaphore for controlling concurrency
 	sem := make(chan struct{}, s.config.MaxConcurrent)
 
 	ipCount := 0
@@ -46,23 +49,23 @@ func (s *Scanner) ScanNetwork(cidr string) []*models.Device {
 	}
 
 	scanned := 0
-	progressInterval := ipCount / 20 // Update every 5%
+	progressInterval := ipCount / 20
 	if progressInterval < 1 {
 		progressInterval = 1
 	}
 
 	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
 		wg.Add(1)
-		sem <- struct{}{} // Acquire semaphore
+		sem <- struct{}{}
 
 		go func(ipStr string) {
 			defer wg.Done()
-			defer func() { <-sem }() // Release semaphore
+			defer func() { <-sem }()
 
 			if device := s.scanIP(ipStr); device != nil {
 				mu.Lock()
 				devices = append(devices, device)
-				fmt.Printf("✅ Found device: %s:%d\n", device.IP, device.Port)
+				fmt.Printf("✅ Found device: %s:%d (%d open ports)\n", device.IP, device.Port, len(device.OpenPorts))
 				mu.Unlock()
 			}
 
@@ -80,7 +83,7 @@ func (s *Scanner) ScanNetwork(cidr string) []*models.Device {
 	return devices
 }
 
-// ScanNetworkWithProgress scans with progress callback for API/Flutter (no console output)
+// ScanNetworkWithProgress scans with progress callback for API/Flutter
 func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int, string)) []*models.Device {
 	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
@@ -94,17 +97,15 @@ func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// Semaphore for controlling concurrency
 	sem := make(chan struct{}, s.config.MaxConcurrent)
 
-	// Count total IPs
 	ipCount := 0
 	for testIP := ip.Mask(ipnet.Mask); ipnet.Contains(testIP); inc(testIP) {
 		ipCount++
 	}
 
 	scanned := 0
-	progressInterval := ipCount / 20 // Update every 5%
+	progressInterval := ipCount / 20
 	if progressInterval < 1 {
 		progressInterval = 1
 	}
@@ -115,11 +116,11 @@ func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int
 
 	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
 		wg.Add(1)
-		sem <- struct{}{} // Acquire semaphore
+		sem <- struct{}{}
 
 		go func(ipStr string) {
 			defer wg.Done()
-			defer func() { <-sem }() // Release semaphore
+			defer func() { <-sem }()
 
 			if device := s.scanIP(ipStr); device != nil {
 				mu.Lock()
@@ -127,7 +128,7 @@ func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int
 				if progressCallback != nil {
 					progressCallback(
 						int(float64(scanned)/float64(ipCount)*100),
-						fmt.Sprintf("Found device: %s:%d", device.IP, device.Port),
+						fmt.Sprintf("Found device: %s (ports: %d)", device.IP, len(device.OpenPorts)),
 					)
 				}
 				mu.Unlock()
@@ -144,21 +145,32 @@ func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int
 	}
 
 	wg.Wait()
-	
+
 	if progressCallback != nil {
 		progressCallback(100, fmt.Sprintf("Scan complete! Found %d devices", len(devices)))
 	}
-	
+
 	return devices
 }
 
-// scanIP checks a single IP for CCTV devices on all configured ports
+// scanIP checks a single IP for CCTV devices and performs detailed scanning
 func (s *Scanner) scanIP(ip string) *models.Device {
+	// First, check CCTV ports quickly
 	for _, port := range s.config.CCTVPorts {
 		if isPortOpen(ip, port, s.config.Timeout) {
 			device := models.NewDevice(ip, port)
 
-			// Run all detections and checks
+			// NEW: Perform detailed port scan
+			if s.config.EnableFullPortScan {
+				s.portScanner.ScanAllPorts(device)
+			}
+
+			// NEW: Detect services
+			if s.config.ServiceDetection {
+				s.serviceDetector.DetectServices(device)
+			}
+
+			// Run vulnerability checks
 			s.detector.DetectDevice(device)
 
 			return device
