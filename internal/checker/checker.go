@@ -25,7 +25,7 @@ func NewChecker(config *configs.Config) *Checker {
 			Timeout: config.Timeout,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true, // For testing purposes only
+					InsecureSkipVerify: true,
 				},
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -51,16 +51,71 @@ func (c *Checker) CheckManufacturer(device *models.Device) {
 	// Check Server header
 	server := strings.ToLower(resp.Header.Get("Server"))
 	
+	// Extended manufacturers map - ALL device types
 	manufacturers := map[string]string{
-		"hikvision": "Hikvision",
-		"dahua":     "Dahua",
-		"axis":      "Axis Communications",
-		"vivotek":   "Vivotek",
-		"foscam":    "Foscam",
+		// Cameras
+		"hikvision": "Hikvision Camera",
+		"dahua":     "Dahua Camera",
+		"axis":      "Axis Communications Camera",
+		"vivotek":   "Vivotek Camera",
+		"foscam":    "Foscam Camera",
 		"ipcam":     "Generic IP Camera",
-		"amcrest":   "Amcrest",
-		"reolink":   "Reolink",
-		"ubnt":      "Ubiquiti",
+		"amcrest":   "Amcrest Camera",
+		"reolink":   "Reolink Camera",
+		"ubnt":      "Ubiquiti Camera",
+		
+		// Routers & Networking
+		"cisco":     "Cisco Router/Switch",
+		"mikrotik":  "MikroTik Router",
+		"tp-link":   "TP-Link Router",
+		"tplink":    "TP-Link Router",
+		"netgear":   "Netgear Router",
+		"linksys":   "Linksys Router",
+		"asus":      "ASUS Router",
+		"d-link":    "D-Link Router",
+		"dlink":     "D-Link Router",
+		"huawei":    "Huawei Router",
+		"xiaomi":    "Xiaomi Router",
+		"openwrt":   "OpenWRT Router",
+		
+		// Printers
+		"hp":        "HP Printer",
+		"canon":     "Canon Printer",
+		"epson":     "Epson Printer",
+		"brother":   "Brother Printer",
+		"lexmark":   "Lexmark Printer",
+		"xerox":     "Xerox Printer",
+		
+		// NAS & Storage
+		"synology":  "Synology NAS",
+		"qnap":      "QNAP NAS",
+		"buffalo":   "Buffalo NAS",
+		"wd":        "Western Digital NAS",
+		"seagate":   "Seagate NAS",
+		
+		// Web Servers
+		"apache":    "Apache Web Server",
+		"nginx":     "Nginx Web Server",
+		"iis":       "Microsoft IIS Server",
+		"lighttpd":  "Lighttpd Server",
+		"tomcat":    "Apache Tomcat Server",
+		
+		// IoT Devices
+		"raspberry": "Raspberry Pi",
+		"arduino":   "Arduino Device",
+		"esp8266":   "ESP8266 IoT Device",
+		"esp32":     "ESP32 IoT Device",
+		"sonos":     "Sonos Speaker",
+		"philips":   "Philips Hue",
+		"nest":      "Google Nest Device",
+		"alexa":     "Amazon Alexa",
+		
+		// Other
+		"windows":   "Windows Device",
+		"linux":     "Linux Server",
+		"ubuntu":    "Ubuntu Server",
+		"debian":    "Debian Server",
+		"centos":    "CentOS Server",
 	}
 
 	for key, name := range manufacturers {
@@ -78,6 +133,16 @@ func (c *Checker) CheckManufacturer(device *models.Device) {
 			return
 		}
 	}
+	
+	// Check X-Powered-By header
+	poweredBy := strings.ToLower(resp.Header.Get("X-Powered-By"))
+	if strings.Contains(poweredBy, "php") {
+		device.Manufacturer = "PHP Web Application"
+	} else if strings.Contains(poweredBy, "express") {
+		device.Manufacturer = "Express.js Server"
+	} else if strings.Contains(poweredBy, "asp.net") {
+		device.Manufacturer = "ASP.NET Application"
+	}
 }
 
 // CheckHTTPSecurity checks for HTTPS usage
@@ -86,7 +151,7 @@ func (c *Checker) CheckHTTPSecurity(device *models.Device) {
 		device.AddIssue(
 			"High",
 			"Unencrypted Communication",
-			"Device uses HTTP instead of HTTPS, credentials and video may be transmitted in cleartext",
+			"Device uses HTTP instead of HTTPS, credentials and data may be transmitted in cleartext",
 			"Enable HTTPS in device settings and use SSL/TLS certificates",
 		)
 	}
@@ -175,6 +240,11 @@ func (c *Checker) CheckCommonVulnerabilities(device *models.Device) {
 		"/system.ini",
 		"/config/config.ini",
 		"/../../../etc/passwd",
+		"/admin/",
+		"/phpmyadmin/",
+		"/.env",
+		"/config.php",
+		"/wp-config.php",
 	}
 	
 	baseURL := fmt.Sprintf("http://%s:%d", device.IP, device.Port)
@@ -198,10 +268,13 @@ func (c *Checker) CheckCommonVulnerabilities(device *models.Device) {
 		}
 	}
 	
-	// Hikvision specific checks
+	// Check for specific device vulnerabilities
 	if strings.Contains(strings.ToLower(device.Manufacturer), "hikvision") {
 		c.checkHikvisionVulnerabilities(device)
 	}
+	
+	// Check for common IoT vulnerabilities
+	c.checkIoTVulnerabilities(device)
 }
 
 func (c *Checker) checkHikvisionVulnerabilities(device *models.Device) {
@@ -219,5 +292,37 @@ func (c *Checker) checkHikvisionVulnerabilities(device *models.Device) {
 				"Update firmware immediately to latest version",
 			)
 		}
+	}
+}
+
+func (c *Checker) checkIoTVulnerabilities(device *models.Device) {
+	// Check for Telnet (insecure protocol)
+	if device.Port == 23 {
+		device.AddIssue(
+			"High",
+			"Telnet Service Running",
+			"Telnet transmits data in plaintext including passwords",
+			"Disable Telnet and use SSH instead",
+		)
+	}
+	
+	// Check for FTP
+	if device.Port == 21 {
+		device.AddIssue(
+			"Medium",
+			"FTP Service Running",
+			"FTP transmits data including credentials in plaintext",
+			"Use SFTP or FTPS for secure file transfer",
+		)
+	}
+	
+	// Check for SMB
+	if device.Port == 445 || device.Port == 139 {
+		device.AddIssue(
+			"High",
+			"SMB Service Exposed",
+			"SMB service exposed to network, vulnerable to EternalBlue and other exploits",
+			"Restrict SMB access and ensure latest patches are applied",
+		)
 	}
 }
