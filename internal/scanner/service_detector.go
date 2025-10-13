@@ -55,7 +55,7 @@ func (sd *ServiceDetector) detectService(ip string, port int) *models.ServiceInf
 
 	// Additional checks based on port
 	switch port {
-	case 80, 8080, 8000, 8888, 8081:
+	case 80, 8080, 8000, 8888, 8081, 8008:
 		sd.detectHTTPService(ip, port, service)
 	case 443, 8443:
 		sd.detectHTTPSService(ip, port, service)
@@ -67,6 +67,20 @@ func (sd *ServiceDetector) detectService(ip string, port int) *models.ServiceInf
 		sd.detectSSHService(ip, port, service)
 	case 23:
 		sd.detectTelnetService(ip, port, service)
+	case 3389:
+		sd.detectRDPService(ip, port, service)
+	case 445, 139:
+		sd.detectSMBService(ip, port, service)
+	case 3306:
+		sd.detectMySQLService(ip, port, service)
+	case 5432:
+		sd.detectPostgreSQLService(ip, port, service)
+	case 27017:
+		sd.detectMongoDBService(ip, port, service)
+	case 6379:
+		sd.detectRedisService(ip, port, service)
+	case 5900, 5901:
+		sd.detectVNCService(ip, port, service)
 	}
 
 	return service
@@ -119,12 +133,15 @@ func (sd *ServiceDetector) fingerprintService(service *models.ServiceInfo, banne
 	if strings.Contains(banner, "hikvision") {
 		service.Name = "Hikvision Camera"
 		service.ExtraInfo["manufacturer"] = "Hikvision"
+		service.ExtraInfo["device_type"] = "CCTV Camera"
 	} else if strings.Contains(banner, "dahua") {
 		service.Name = "Dahua Camera"
 		service.ExtraInfo["manufacturer"] = "Dahua"
+		service.ExtraInfo["device_type"] = "CCTV Camera"
 	} else if strings.Contains(banner, "axis") {
 		service.Name = "Axis Camera"
 		service.ExtraInfo["manufacturer"] = "Axis"
+		service.ExtraInfo["device_type"] = "CCTV Camera"
 	}
 
 	// SSH
@@ -141,6 +158,34 @@ func (sd *ServiceDetector) fingerprintService(service *models.ServiceInfo, banne
 	// RTSP
 	if strings.Contains(banner, "rtsp") {
 		service.Name = "RTSP Stream"
+		service.ExtraInfo["protocol"] = "RTSP"
+	}
+
+	// SMB/Samba
+	if strings.Contains(banner, "smb") || strings.Contains(banner, "samba") {
+		service.Name = "SMB File Sharing"
+		service.Version = extractVersion(banner, `samba[_-](\d+\.\d+\.\d+)`)
+	}
+
+	// MySQL
+	if strings.Contains(banner, "mysql") {
+		service.Name = "MySQL Database"
+		service.Version = extractVersion(banner, `(\d+\.\d+\.\d+)`)
+	}
+
+	// PostgreSQL
+	if strings.Contains(banner, "postgresql") {
+		service.Name = "PostgreSQL Database"
+	}
+
+	// MongoDB
+	if strings.Contains(banner, "mongodb") {
+		service.Name = "MongoDB Database"
+	}
+
+	// Redis
+	if strings.Contains(banner, "redis") {
+		service.Name = "Redis Cache"
 	}
 }
 
@@ -173,7 +218,14 @@ func (sd *ServiceDetector) detectHTTPService(ip string, port int, service *model
 		if strings.Contains(key, "camera") || strings.Contains(key, "hikvision") || 
 		   strings.Contains(key, "dahua") || strings.Contains(key, "axis") {
 			service.ExtraInfo[key] = strings.Join(values, ", ")
+			service.ExtraInfo["device_type"] = "CCTV Camera"
 		}
+	}
+
+	// Check for router/network device indicators
+	if strings.Contains(resp.Header.Get("Server"), "router") || 
+	   strings.Contains(resp.Header.Get("Server"), "gateway") {
+		service.ExtraInfo["device_type"] = "Router/Gateway"
 	}
 
 	// Check WWW-Authenticate
@@ -188,13 +240,14 @@ func (sd *ServiceDetector) detectHTTPService(ip string, port int, service *model
 func (sd *ServiceDetector) detectHTTPSService(ip string, port int, service *models.ServiceInfo) {
 	service.Name = "HTTPS"
 	service.ExtraInfo["encrypted"] = "true"
-	// Note: Full HTTPS detection requires TLS handling
+	service.ExtraInfo["protocol"] = "TLS/SSL"
 }
 
 // detectRTSPService detects RTSP service
 func (sd *ServiceDetector) detectRTSPService(ip string, port int, service *models.ServiceInfo) {
 	service.Name = "RTSP Video Stream"
 	service.ExtraInfo["protocol"] = "RTSP"
+	service.ExtraInfo["device_type"] = "CCTV Camera"
 	
 	// Try RTSP OPTIONS request
 	address := fmt.Sprintf("%s:%d", ip, port)
@@ -204,7 +257,7 @@ func (sd *ServiceDetector) detectRTSPService(ip string, port int, service *model
 	}
 	defer conn.Close()
 
-	request := "OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: CCTV-Scanner\r\n\r\n"
+	request := "OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: Network-Scanner\r\n\r\n"
 	conn.Write([]byte(request))
 	
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
@@ -219,20 +272,72 @@ func (sd *ServiceDetector) detectRTSPService(ip string, port int, service *model
 // detectFTPService detects FTP service
 func (sd *ServiceDetector) detectFTPService(ip string, port int, service *models.ServiceInfo) {
 	service.Name = "FTP"
-	// FTP banner is usually sent automatically
+	service.ExtraInfo["protocol"] = "FTP"
 }
 
 // detectSSHService detects SSH service
 func (sd *ServiceDetector) detectSSHService(ip string, port int, service *models.ServiceInfo) {
 	service.Name = "SSH"
 	service.ExtraInfo["protocol"] = "SSH"
+	service.ExtraInfo["encrypted"] = "true"
 }
 
 // detectTelnetService detects Telnet service
 func (sd *ServiceDetector) detectTelnetService(ip string, port int, service *models.ServiceInfo) {
 	service.Name = "Telnet"
 	service.ExtraInfo["protocol"] = "Telnet"
-	service.ExtraInfo["warning"] = "Unencrypted protocol"
+	service.ExtraInfo["warning"] = "Unencrypted protocol - SECURITY RISK"
+}
+
+// detectRDPService detects RDP service
+func (sd *ServiceDetector) detectRDPService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "Remote Desktop Protocol (RDP)"
+	service.ExtraInfo["protocol"] = "RDP"
+	service.ExtraInfo["device_type"] = "Windows Computer"
+}
+
+// detectSMBService detects SMB service
+func (sd *ServiceDetector) detectSMBService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "SMB File Sharing"
+	service.ExtraInfo["protocol"] = "SMB/CIFS"
+	if port == 445 {
+		service.ExtraInfo["device_type"] = "Windows Computer/NAS"
+	}
+}
+
+// detectMySQLService detects MySQL service
+func (sd *ServiceDetector) detectMySQLService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "MySQL Database"
+	service.ExtraInfo["protocol"] = "MySQL"
+	service.ExtraInfo["device_type"] = "Database Server"
+}
+
+// detectPostgreSQLService detects PostgreSQL service
+func (sd *ServiceDetector) detectPostgreSQLService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "PostgreSQL Database"
+	service.ExtraInfo["protocol"] = "PostgreSQL"
+	service.ExtraInfo["device_type"] = "Database Server"
+}
+
+// detectMongoDBService detects MongoDB service
+func (sd *ServiceDetector) detectMongoDBService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "MongoDB Database"
+	service.ExtraInfo["protocol"] = "MongoDB"
+	service.ExtraInfo["device_type"] = "Database Server"
+}
+
+// detectRedisService detects Redis service
+func (sd *ServiceDetector) detectRedisService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "Redis Cache"
+	service.ExtraInfo["protocol"] = "Redis"
+	service.ExtraInfo["device_type"] = "Cache Server"
+}
+
+// detectVNCService detects VNC service
+func (sd *ServiceDetector) detectVNCService(ip string, port int, service *models.ServiceInfo) {
+	service.Name = "VNC Remote Desktop"
+	service.ExtraInfo["protocol"] = "VNC"
+	service.ExtraInfo["warning"] = "Remote desktop access enabled"
 }
 
 // getProbeForPort returns the appropriate probe for a port

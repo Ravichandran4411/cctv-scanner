@@ -21,7 +21,7 @@ func NewReporter() *Reporter {
 // GenerateReport generates and prints a comprehensive report
 func (r *Reporter) GenerateReport(devices []*models.Device) {
 	if len(devices) == 0 {
-		fmt.Println("\n✅ No CCTV devices found on the network.")
+		fmt.Println("\n✅ No devices found on the network.")
 		return
 	}
 
@@ -31,7 +31,7 @@ func (r *Reporter) GenerateReport(devices []*models.Device) {
 	})
 
 	fmt.Println("\n" + strings.Repeat("=", 70))
-	fmt.Println("                    SCAN RESULTS")
+	fmt.Println("                    NETWORK SCAN RESULTS")
 	fmt.Println(strings.Repeat("=", 70))
 
 	for i, device := range devices {
@@ -43,11 +43,31 @@ func (r *Reporter) GenerateReport(devices []*models.Device) {
 }
 
 func (r *Reporter) printDeviceReport(num int, device *models.Device) {
-	fmt.Printf("\n[%d] 📹 DEVICE: %s:%d\n", num, device.IP, device.Port)
+	// Determine device emoji based on type/manufacturer
+	emoji := r.getDeviceEmoji(device)
+	
+	fmt.Printf("\n[%d] %s DEVICE: %s:%d\n", num, emoji, device.IP, device.Port)
 	fmt.Println(strings.Repeat("-", 70))
 	
 	if device.Manufacturer != "" {
-		fmt.Printf("    Manufacturer: %s\n", device.Manufacturer)
+		fmt.Printf("    Type: %s\n", device.Manufacturer)
+	} else {
+		fmt.Printf("    Type: Unknown Device\n")
+	}
+	
+	// Show all open ports if available
+	if len(device.OpenPorts) > 0 {
+		fmt.Printf("    Open Ports: %v\n", device.OpenPorts)
+	}
+	
+	// Show detected services if available
+	if len(device.Services) > 0 {
+		fmt.Printf("    Services: ")
+		services := []string{}
+		for _, service := range device.Services {
+			services = append(services, service.Name)
+		}
+		fmt.Printf("%s\n", strings.Join(services, ", "))
 	}
 	
 	fmt.Printf("    Response Time: %dms\n", device.ResponseTime)
@@ -77,6 +97,58 @@ func (r *Reporter) printDeviceReport(num int, device *models.Device) {
 			fmt.Printf("       Fix: %s\n", issue.Remediation)
 		}
 	}
+}
+
+func (r *Reporter) getDeviceEmoji(device *models.Device) string {
+	manufacturer := strings.ToLower(device.Manufacturer)
+	
+	// CCTV cameras
+	if strings.Contains(manufacturer, "hikvision") || 
+	   strings.Contains(manufacturer, "dahua") || 
+	   strings.Contains(manufacturer, "axis") ||
+	   strings.Contains(manufacturer, "camera") ||
+	   strings.Contains(manufacturer, "cctv") {
+		return "📹"
+	}
+	
+	// Routers/Network devices
+	if strings.Contains(manufacturer, "router") || 
+	   strings.Contains(manufacturer, "cisco") ||
+	   strings.Contains(manufacturer, "mikrotik") ||
+	   strings.Contains(manufacturer, "ubiquiti") {
+		return "🌐"
+	}
+	
+	// Printers
+	if strings.Contains(manufacturer, "printer") || 
+	   strings.Contains(manufacturer, "hp") ||
+	   strings.Contains(manufacturer, "epson") {
+		return "🖨️"
+	}
+	
+	// Computers/Servers
+	if strings.Contains(manufacturer, "windows") || 
+	   strings.Contains(manufacturer, "linux") ||
+	   strings.Contains(manufacturer, "server") ||
+	   strings.Contains(manufacturer, "computer") {
+		return "💻"
+	}
+	
+	// NAS/Storage
+	if strings.Contains(manufacturer, "nas") || 
+	   strings.Contains(manufacturer, "synology") ||
+	   strings.Contains(manufacturer, "qnap") {
+		return "💾"
+	}
+	
+	// Smart devices/IoT
+	if strings.Contains(manufacturer, "iot") || 
+	   strings.Contains(manufacturer, "smart") {
+		return "🏠"
+	}
+	
+	// Default for unknown devices
+	return "📡"
 }
 
 func (r *Reporter) getIssuesBySeverity(device *models.Device, severity string) []models.SecurityIssue {
@@ -114,6 +186,9 @@ func (r *Reporter) printSummary(devices []*models.Device) {
 	highIssues := 0
 	mediumIssues := 0
 	lowIssues := 0
+	
+	// Count device types
+	deviceTypes := make(map[string]int)
 
 	for _, device := range devices {
 		if device.Vulnerable {
@@ -131,11 +206,28 @@ func (r *Reporter) printSummary(devices []*models.Device) {
 				lowIssues++
 			}
 		}
+		
+		// Count device types
+		emoji := r.getDeviceEmoji(device)
+		deviceTypes[emoji]++
 	}
 
 	fmt.Printf("\n📊 Total Devices Found: %d\n", len(devices))
-	fmt.Printf("⚠️  Devices with Vulnerabilities: %d (%.1f%%)\n", 
-		vulnerable, float64(vulnerable)/float64(len(devices))*100)
+	
+	// Show device breakdown
+	if len(deviceTypes) > 0 {
+		fmt.Println("\n📱 Device Breakdown:")
+		for emoji, count := range deviceTypes {
+			fmt.Printf("   %s %d devices\n", emoji, count)
+		}
+	}
+	
+	fmt.Printf("\n⚠️  Devices with Vulnerabilities: %d", vulnerable)
+	if len(devices) > 0 {
+		fmt.Printf(" (%.1f%%)", float64(vulnerable)/float64(len(devices))*100)
+	}
+	fmt.Println()
+	
 	fmt.Printf("\n🔴 Critical Issues: %d\n", criticalIssues)
 	fmt.Printf("🟠 High Issues: %d\n", highIssues)
 	fmt.Printf("🟡 Medium Issues: %d\n", mediumIssues)
@@ -148,16 +240,17 @@ func (r *Reporter) printRecommendations(devices []*models.Device) {
 	fmt.Println(strings.Repeat("=", 70))
 	
 	recommendations := []string{
-		"🔐 Immediately change ALL default passwords to strong, unique passwords",
-		"🔒 Enable HTTPS/SSL for all web interfaces",
-		"🔄 Update firmware to the latest version on all devices",
-		"🌐 Isolate cameras on a separate VLAN with restricted access",
-		"🚫 Disable UPnP on all cameras and routers",
-		"🔑 Implement strong authentication (WPA3, certificate-based)",
+		"🔐 Change ALL default passwords to strong, unique passwords",
+		"🔒 Enable HTTPS/SSL for all web interfaces where possible",
+		"🔄 Update firmware/software to the latest version on all devices",
+		"🌐 Isolate IoT devices on a separate VLAN with restricted access",
+		"🚫 Disable UPnP on routers and unnecessary devices",
+		"🔑 Implement strong authentication (WPA3, MFA where supported)",
 		"🛡️ Use VPN for remote access instead of port forwarding",
 		"📹 Disable unnecessary services and close unused ports",
-		"📝 Regular security audits and monitoring",
-		"💾 Keep backups of camera configurations",
+		"🔥 Configure firewall rules to restrict device communication",
+		"📝 Perform regular security audits and monitoring",
+		"💾 Keep backups of critical device configurations",
 	}
 
 	fmt.Println()
@@ -187,7 +280,7 @@ func (r *Reporter) printRecommendations(devices []*models.Device) {
 // SaveToFile saves the report to a text file
 func (r *Reporter) SaveToFile(devices []*models.Device) string {
 	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("cctv_scan_report_%s.txt", timestamp)
+	filename := fmt.Sprintf("network_scan_report_%s.txt", timestamp)
 	
 	file, err := os.Create(filename)
 	if err != nil {

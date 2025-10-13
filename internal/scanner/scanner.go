@@ -8,6 +8,7 @@ import (
 
 	"github.com/gatiella/cctv-scanner/configs"
 	"github.com/gatiella/cctv-scanner/internal/detector"
+	"github.com/gatiella/cctv-scanner/internal/fingerprint"
 	"github.com/gatiella/cctv-scanner/pkg/models"
 )
 
@@ -17,6 +18,7 @@ type Scanner struct {
 	detector        *detector.Detector
 	portScanner     *PortScanner
 	serviceDetector *ServiceDetector
+	fingerprinter   *fingerprint.Fingerprinter // NEW
 }
 
 // NewScanner creates a new Scanner instance
@@ -26,6 +28,7 @@ func NewScanner(config *configs.Config) *Scanner {
 		detector:        detector.NewDetector(config),
 		portScanner:     NewPortScanner(config),
 		serviceDetector: NewServiceDetector(config),
+		fingerprinter:   fingerprint.NewFingerprinter(), // NEW
 	}
 }
 
@@ -65,7 +68,7 @@ func (s *Scanner) ScanNetwork(cidr string) []*models.Device {
 			if device := s.scanIP(ipStr); device != nil {
 				mu.Lock()
 				devices = append(devices, device)
-				fmt.Printf("✅ Found device: %s:%d (%d open ports)\n", device.IP, device.Port, len(device.OpenPorts))
+				fmt.Printf("✅ Found device: %s:%d (%s) [%s]\n", device.IP, device.Port, device.DeviceType, device.OS)
 				mu.Unlock()
 			}
 
@@ -128,7 +131,7 @@ func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int
 				if progressCallback != nil {
 					progressCallback(
 						int(float64(scanned)/float64(ipCount)*100),
-						fmt.Sprintf("Found device: %s (ports: %d)", device.IP, len(device.OpenPorts)),
+						fmt.Sprintf("Found %s: %s", device.DeviceType, device.IP),
 					)
 				}
 				mu.Unlock()
@@ -164,6 +167,9 @@ func (s *Scanner) scanIP(ip string) *models.Device {
 			// Device found! Create device object
 			device := models.NewDevice(ip, port)
 
+			// NEW: Perform device fingerprinting FIRST
+			s.fingerprinter.FingerprintDevice(device)
+
 			// Perform detailed port scan to find ALL open ports
 			if s.config.EnableFullPortScan {
 				s.portScanner.ScanAllPorts(device)
@@ -174,7 +180,10 @@ func (s *Scanner) scanIP(ip string) *models.Device {
 				s.serviceDetector.DetectServices(device)
 			}
 
-			// Run vulnerability checks (for CCTV devices)
+			// Re-run fingerprinting after service detection for better classification
+			s.fingerprinter.FingerprintDevice(device)
+
+			// Run vulnerability checks (for all devices)
 			s.detector.DetectDevice(device)
 
 			return device
