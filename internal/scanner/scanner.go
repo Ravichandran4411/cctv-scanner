@@ -15,8 +15,8 @@ import (
 type Scanner struct {
 	config          *configs.Config
 	detector        *detector.Detector
-	portScanner     *PortScanner     // NEW
-	serviceDetector *ServiceDetector // NEW
+	portScanner     *PortScanner
+	serviceDetector *ServiceDetector
 }
 
 // NewScanner creates a new Scanner instance
@@ -24,8 +24,8 @@ func NewScanner(config *configs.Config) *Scanner {
 	return &Scanner{
 		config:          config,
 		detector:        detector.NewDetector(config),
-		portScanner:     NewPortScanner(config),     // NEW
-		serviceDetector: NewServiceDetector(config), // NEW
+		portScanner:     NewPortScanner(config),
+		serviceDetector: NewServiceDetector(config),
 	}
 }
 
@@ -153,29 +153,35 @@ func (s *Scanner) ScanNetworkWithProgress(cidr string, progressCallback func(int
 	return devices
 }
 
-// scanIP checks a single IP for CCTV devices and performs detailed scanning
+// scanIP checks a single IP for ANY open ports (FIXED VERSION)
 func (s *Scanner) scanIP(ip string) *models.Device {
-	// First, check CCTV ports quickly
-	for _, port := range s.config.CCTVPorts {
+	// CRITICAL FIX: Get ports to scan from config
+	portsToScan := s.config.GetPortsToScan()
+	
+	// Try to find ANY open port on this device
+	for _, port := range portsToScan {
 		if isPortOpen(ip, port, s.config.Timeout) {
+			// Device found! Create device object
 			device := models.NewDevice(ip, port)
 
-			// NEW: Perform detailed port scan
+			// Perform detailed port scan to find ALL open ports
 			if s.config.EnableFullPortScan {
 				s.portScanner.ScanAllPorts(device)
 			}
 
-			// NEW: Detect services
+			// Detect services on open ports
 			if s.config.ServiceDetection {
 				s.serviceDetector.DetectServices(device)
 			}
 
-			// Run vulnerability checks
+			// Run vulnerability checks (for CCTV devices)
 			s.detector.DetectDevice(device)
 
 			return device
 		}
 	}
+	
+	// No open ports found on this IP
 	return nil
 }
 
