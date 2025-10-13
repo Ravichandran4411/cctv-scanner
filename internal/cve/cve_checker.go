@@ -20,17 +20,26 @@ func NewCVEChecker() *CVEChecker {
 
 // CheckDevice checks a device for known CVEs
 func (cc *CVEChecker) CheckDevice(device *models.Device) {
-	if device.Manufacturer == "" || device.Manufacturer == "Unknown" {
-		// No manufacturer identified, check generic CVEs
-		genericCVEs := cc.database.LookupCVEs("generic")
-		for _, cve := range genericCVEs {
-			device.AddCVE(cve)
-		}
-		return
+	// ✅ FIX: Only check CVEs if manufacturer is IDENTIFIED
+	if device.Manufacturer == "" || device.Manufacturer == "Unknown" || device.Manufacturer == "Unknown Device" {
+		// Don't add CVEs to unidentified devices
+		// Only add an informational note
+		device.AddIssue(
+			"Unknown Device Detection",
+			"Info",
+			"Device manufacturer could not be identified. Manual inspection recommended to determine if device is vulnerable.",
+			"Perform manual fingerprinting or check device documentation",
+		)
+		return // ✅ Exit early - no CVEs added
 	}
 
-	// Look up CVEs for this manufacturer
+	// Look up CVEs for this IDENTIFIED manufacturer
 	cves := cc.database.LookupCVEs(device.Manufacturer)
+	
+	// ✅ FIX: Don't return generic CVEs for unknown devices
+	if len(cves) == 0 {
+		return // No CVEs found for this manufacturer
+	}
 	
 	for _, cve := range cves {
 		// Add all CVEs for this manufacturer
@@ -55,8 +64,8 @@ func (cc *CVEChecker) addCVEAsIssue(device *models.Device, cve models.CVEInfo) {
 	}
 	
 	device.AddIssue(
+		cve.ID,
 		cve.Severity,
-		"Known CVE: "+cve.ID,
 		description,
 		cve.Remediation,
 	)
@@ -65,7 +74,7 @@ func (cc *CVEChecker) addCVEAsIssue(device *models.Device, cve models.CVEInfo) {
 // GetDatabaseStats returns statistics about the CVE database
 func (cc *CVEChecker) GetDatabaseStats() map[string]interface{} {
 	return map[string]interface{}{
-		"total_cves": cc.database.GetCVECount(),
+		"total_cves":    cc.database.GetCVECount(),
 		"manufacturers": len(cc.database.cves),
 	}
 }

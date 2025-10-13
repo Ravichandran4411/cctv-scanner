@@ -153,28 +153,28 @@ func (db *CVEDatabase) loadCVEs() {
 		},
 	}
 
-	// Generic/Multiple Manufacturer CVEs
-	db.cves["generic"] = []models.CVEInfo{
-		{
-			ID:          "CVE-2019-11219",
-			Description: "Default credentials vulnerability in multiple IP camera brands.",
-			Severity:    "Critical",
-			CVSSScore:   9.8,
-			CVSSVector:  "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-			PublishedDate: time.Date(2019, 4, 15, 0, 0, 0, 0, time.UTC),
-			LastModified:  time.Date(2019, 4, 25, 0, 0, 0, 0, time.UTC),
-			AffectedVersions: []string{
-				"Various manufacturers and models",
-			},
-			ExploitAvailable: true,
-			ExploitMaturity:  "High",
-			References: []string{
-				"https://nvd.nist.gov/vuln/detail/CVE-2019-11219",
-			},
-			Remediation:    "Change default credentials immediately",
-			PatchAvailable: false,
-		},
-	}
+	// // Generic/Multiple Manufacturer CVEs
+	// db.cves["generic"] = []models.CVEInfo{
+	// 	{
+	// 		ID:          "CVE-2019-11219",
+	// 		Description: "Default credentials vulnerability in multiple IP camera brands.",
+	// 		Severity:    "Critical",
+	// 		CVSSScore:   9.8,
+	// 		CVSSVector:  "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	// 		PublishedDate: time.Date(2019, 4, 15, 0, 0, 0, 0, time.UTC),
+	// 		LastModified:  time.Date(2019, 4, 25, 0, 0, 0, 0, time.UTC),
+	// 		AffectedVersions: []string{
+	// 			"Various manufacturers and models",
+	// 		},
+	// 		ExploitAvailable: true,
+	// 		ExploitMaturity:  "High",
+	// 		References: []string{
+	// 			"https://nvd.nist.gov/vuln/detail/CVE-2019-11219",
+	// 		},
+	// 		Remediation:    "Change default credentials immediately",
+	// 		PatchAvailable: false,
+	// 	},
+	// }
 
 	// Foscam CVEs
 	db.cves["foscam"] = []models.CVEInfo{
@@ -204,6 +204,11 @@ func (db *CVEDatabase) loadCVEs() {
 func (db *CVEDatabase) LookupCVEs(manufacturer string) []models.CVEInfo {
 	manufacturer = strings.ToLower(manufacturer)
 	
+	// ✅ FIX: Don't return generic CVEs for unknown devices
+	if manufacturer == "" || manufacturer == "unknown" || manufacturer == "unknown device" {
+		return []models.CVEInfo{} // Return empty array
+	}
+	
 	// Direct match
 	if cves, exists := db.cves[manufacturer]; exists {
 		return cves
@@ -211,15 +216,17 @@ func (db *CVEDatabase) LookupCVEs(manufacturer string) []models.CVEInfo {
 	
 	// Fuzzy match
 	for key, cves := range db.cves {
+		if key == "generic" {
+			continue // ✅ Skip generic CVEs in fuzzy matching
+		}
 		if strings.Contains(manufacturer, key) || strings.Contains(key, manufacturer) {
 			return cves
 		}
 	}
 	
-	// Return generic CVEs if no match
-	return db.cves["generic"]
+	// ✅ FIX: Return empty array instead of generic CVEs
+	return []models.CVEInfo{}
 }
-
 // GetCVEByID retrieves a specific CVE by ID
 func (db *CVEDatabase) GetCVEByID(cveID string) *models.CVEInfo {
 	for _, cveList := range db.cves {

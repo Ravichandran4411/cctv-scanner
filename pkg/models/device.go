@@ -16,6 +16,11 @@ type Device struct {
 	ResponseTime int             `json:"response_time"` // in milliseconds
 	ScanTime     time.Time       `json:"scan_time"`
 
+	// ✅ NEW: Add tracking for ephemeral devices
+	FirstSeen    time.Time       `json:"first_seen"`
+	LastVerified time.Time       `json:"last_verified"`
+	IsVerified   bool            `json:"is_verified"` 
+
 	// Port scanning fields
 	OpenPorts []PortInfo    `json:"open_ports,omitempty"`
 	Services  []ServiceInfo `json:"services,omitempty"`
@@ -89,6 +94,7 @@ type Credential struct {
 
 // NewDevice creates a new Device instance
 func NewDevice(ip string, port int) *Device {
+	now := time.Now()
 	return &Device{
 		IP:           ip,
 		Port:         port,
@@ -100,11 +106,13 @@ func NewDevice(ip string, port int) *Device {
 		OpenPorts:    []PortInfo{},
 		Services:     []ServiceInfo{},
 		CVEs:         []CVEInfo{},
-		ScanTime:     time.Now(),
+		ScanTime:     now,
+		FirstSeen:    now,        // ✅ NEW
+		LastVerified: now,        // ✅ NEW
+		IsVerified:   false,      // ✅ NEW
 		DeviceType:   "Unknown Device",
 	}
 }
-
 // AddIssue adds a security issue to the device
 func (d *Device) AddIssue(issueType, severity, description, remediation string) {
 	d.Issues = append(d.Issues, SecurityIssue{

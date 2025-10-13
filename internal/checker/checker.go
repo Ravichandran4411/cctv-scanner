@@ -159,6 +159,11 @@ func (c *Checker) CheckHTTPSecurity(device *models.Device) {
 
 // CheckAuthentication checks authentication requirements
 func (c *Checker) CheckAuthentication(device *models.Device) {
+	// ✅ FIX: Skip auth check if device is unknown
+	if device.Manufacturer == "Unknown" || device.Manufacturer == "" {
+		return
+	}
+	
 	url := fmt.Sprintf("http://%s:%d", device.IP, device.Port)
 	
 	resp, err := c.client.Get(url)
@@ -170,8 +175,8 @@ func (c *Checker) CheckAuthentication(device *models.Device) {
 	// Check if accessible without authentication
 	if resp.StatusCode == 200 {
 		device.AddIssue(
-			"Critical",
 			"No Authentication Required",
+			"Critical",
 			"Web interface is accessible without any authentication",
 			"Enable authentication and require strong passwords",
 		)
@@ -180,8 +185,8 @@ func (c *Checker) CheckAuthentication(device *models.Device) {
 	// Check for basic auth over HTTP
 	if resp.StatusCode == 401 && device.Port != 443 {
 		device.AddIssue(
-			"High",
 			"Basic Auth over HTTP",
+			"High",
 			"Using Basic Authentication over unencrypted HTTP connection",
 			"Switch to HTTPS or use digest authentication",
 		)
@@ -235,7 +240,10 @@ func (c *Checker) CheckRTSP(device *models.Device) {
 
 // CheckCommonVulnerabilities checks for well-known vulnerabilities
 func (c *Checker) CheckCommonVulnerabilities(device *models.Device) {
-	// Check for common vulnerable paths
+	// ✅ FIX: Skip vulnerability checks if device is unidentified
+	if device.Manufacturer == "Unknown" || device.Manufacturer == "" {
+		return // Don't check paths on unknown devices
+	}
 	vulnerablePaths := []string{
 		"/system.ini",
 		"/config/config.ini",
@@ -246,6 +254,7 @@ func (c *Checker) CheckCommonVulnerabilities(device *models.Device) {
 		"/config.php",
 		"/wp-config.php",
 	}
+	
 	
 	baseURL := fmt.Sprintf("http://%s:%d", device.IP, device.Port)
 	
